@@ -189,6 +189,14 @@ class AIAnalyzer:
             try:
                 subprocess.run([sys.executable, "process_analysis.py"], check=True)
                 logging.info("成功运行 process_analysis.py 处理分析结果")
+                
+                # 删除原始CSV文件
+                try:
+                    os.remove(file_path)
+                    logging.info(f"已删除原始文件: {file_path}")
+                except Exception as e:
+                    logging.error(f"删除原始文件时出错 {file_path}: {str(e)}")
+                    
             except subprocess.CalledProcessError as e:
                 logging.error(f"运行 process_analysis.py 时出错: {str(e)}")
             except Exception as e:
