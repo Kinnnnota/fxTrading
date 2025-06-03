@@ -5,6 +5,18 @@ import csv
 import time
 import sys
 from datetime import datetime
+from dotenv import load_dotenv
+
+# 加载环境变量
+load_dotenv()
+
+# 获取环境变量
+MT4_TERMINAL_PATH = os.getenv('MT4_TERMINAL_PATH')
+MT4_FILES_DIR = os.getenv('MT4_FILES_DIR')
+MT4DATA_DIR = os.getenv('MT4DATA_DIR')
+
+if not all([MT4_TERMINAL_PATH, MT4_FILES_DIR, MT4DATA_DIR]):
+    raise ValueError("缺少必要的环境变量配置")
 
 def extract_json_from_file(file_path):
     """从文件中提取JSON数据，支持多种编码"""
@@ -68,7 +80,7 @@ def process_analysis_files():
     """处理分析文件的主函数"""
     try:
         # 获取所有 *_analysis.txt 文件
-        analysis_files = glob.glob('MT4data/*_analysis.txt')
+        analysis_files = glob.glob(os.path.join(MT4DATA_DIR, '*_analysis.txt'))
         
         if not analysis_files:
             print("没有找到需要处理的文件")
@@ -109,8 +121,8 @@ def process_analysis_files():
 
         # 定义两个输出路径
         output_paths = [
-            'MT4data/orders.csv',
-            r'C:\Users\q5141\AppData\Roaming\MetaQuotes\Terminal\6350F28AFC7E097F9CE8C04C240B4500\MQL4\Files\orders.csv'
+            os.path.join(MT4DATA_DIR, 'orders.csv'),
+            os.path.join(MT4_TERMINAL_PATH, MT4_FILES_DIR, 'orders.csv')
         ]
         
         # 检查每个文件是否存在

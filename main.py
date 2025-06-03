@@ -11,6 +11,8 @@ from order import OrderType
 import pandas as pd
 import pytz
 import re
+import random
+import time
 
 # 加载环境变量
 load_dotenv()
@@ -67,16 +69,34 @@ class TradingAI:
             ]
         }
         
-        try:
-            response = self.bedrock_client.invoke_model(
-                modelId=CLAUDE_MODEL_ID,
-                body=json.dumps(body)
-            )
-            response_body = json.loads(response['body'].read())
-            return response_body['content'][0]['text']
-        except Exception as e:
-            print(f"调用模型时发生错误: {str(e)}")
-            return None
+        max_retries = 10  # 增加到10次重试
+        retry_count = 0
+        base_delay = 1  # 基础延迟时间（秒）
+        
+        while retry_count < max_retries:
+            try:
+                response = self.bedrock_client.invoke_model(
+                    modelId=CLAUDE_MODEL_ID,
+                    body=json.dumps(body)
+                )
+                response_body = json.loads(response['body'].read())
+                return response_body['content'][0]['text']
+            except Exception as e:
+                error_str = str(e)
+                print(f"调用模型时发生错误: {error_str}")
+                
+                # 如果是限流错误，添加随机延迟后重试
+                if "ThrottlingException" in error_str:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        # 使用指数退避策略，基础延迟时间随重试次数增加
+                        max_delay = base_delay * (2 ** retry_count)  # 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
+                        # 在基础延迟和最大延迟之间随机选择
+                        delay = random.uniform(base_delay, min(max_delay, 60))  # 限制最大延迟为60秒
+                        print(f"遇到限流，第 {retry_count} 次重试，等待 {delay:.2f} 秒...")
+                        time.sleep(delay)
+                        continue
+                return None
 
     def _parse_ai_response(self, response: str) -> dict:
         """解析AI的响应，提取交易参数"""

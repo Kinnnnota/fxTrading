@@ -8,8 +8,12 @@ import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import logging
+from dotenv import load_dotenv
+import subprocess
+import sys
 
-# 监控MT4数据更改，当有新文件时，读取文件，并处理文件，处理完成后，删除原始文件
+# 加载环境变量
+load_dotenv()
 
 # 设置日志
 logging.basicConfig(
@@ -18,11 +22,21 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
+# 获取环境变量
+MT4_TERMINAL_PATH = os.getenv('MT4_TERMINAL_PATH')
+MT4_FILES_DIR = os.getenv('MT4_FILES_DIR')
+MT4DATA_DIR = os.getenv('MT4DATA_DIR')
+
+if not all([MT4_TERMINAL_PATH, MT4_FILES_DIR, MT4DATA_DIR]):
+    raise ValueError("缺少必要的环境变量配置")
+
+# 监控MT4数据更改，当有新文件时，读取文件，并处理文件，处理完成后，删除原始文件
+
 class MT4FileHandler(FileSystemEventHandler):
     def __init__(self, mt4_dir, output_dir):
         self.mt4_dir = mt4_dir
         self.output_dir = output_dir
-        self.processed_files = set()
+        self.last_modified_times = {}  # 用于跟踪文件的最后修改时间
         
         # 处理启动时已存在的文件
         self.process_existing_files()
@@ -31,7 +45,6 @@ class MT4FileHandler(FileSystemEventHandler):
         """处理目录中已存在的CSV文件"""
         csv_files = glob.glob(os.path.join(self.mt4_dir, "*.csv"))
         for file_path in csv_files:
-            if file_path not in self.processed_files:
                 self.process_file(file_path)
     
     def process_file(self, file_path):
@@ -42,15 +55,22 @@ class MT4FileHandler(FileSystemEventHandler):
                 logging.info(f"忽略文件: {file_path}")
                 return
                 
-            if file_path in self.processed_files:
-                return
-                
-            # 等待文件写入完成
-            time.sleep(1)
-            
             # 检查文件是否可读
             if not os.path.exists(file_path):
                 return
+                
+            # 获取文件当前修改时间
+            current_mtime = os.path.getmtime(file_path)
+            
+            # 如果文件没有被修改过，跳过处理
+            if file_path in self.last_modified_times and current_mtime <= self.last_modified_times[file_path]:
+                return
+                
+            # 更新最后修改时间
+            self.last_modified_times[file_path] = current_mtime
+                
+            # 等待文件写入完成
+            time.sleep(1)
                 
             # 获取输出文件路径
             output_file = os.path.join(self.output_dir, os.path.basename(file_path))
@@ -65,8 +85,15 @@ class MT4FileHandler(FileSystemEventHandler):
             except Exception as e:
                 logging.error(f"删除文件失败 {file_path}: {e}")
             
-            # 记录已处理的文件
-            self.processed_files.add(file_path)
+            # 直接触发AI分析
+            try:
+                subprocess.run([sys.executable, "process_ai_analysis.py", "--file", output_file], check=True)
+                logging.info(f"成功触发AI分析: {output_file}")
+                os.remove(output_file)
+            except subprocess.CalledProcessError as e:
+                logging.error(f"触发AI分析时出错: {str(e)}")
+            except Exception as e:
+                logging.error(f"触发AI分析时发生未知错误: {str(e)}")
             
         except Exception as e:
             logging.error(f"处理文件 {file_path} 时出错: {e}")
@@ -79,6 +106,16 @@ class MT4FileHandler(FileSystemEventHandler):
                 logging.info(f"忽略新创建的文件: {event.src_path}")
                 return
             logging.info(f"检测到新文件: {event.src_path}")
+            self.process_file(event.src_path)
+    
+    def on_modified(self, event):
+        """当文件被修改时触发"""
+        if not event.is_directory and event.src_path.endswith('.csv'):
+            # 忽略 orders.csv 文件
+            if os.path.basename(event.src_path) == 'orders.csv':
+                logging.info(f"忽略修改的文件: {event.src_path}")
+                return
+            logging.info(f"检测到文件修改: {event.src_path}")
             self.process_file(event.src_path)
 
 def process_csv_data(input_file, output_file):
@@ -137,10 +174,10 @@ def process_csv_data(input_file, output_file):
 
 def start_monitoring():
     # MT4数据目录路径
-    mt4_dir = r"C:\Users\q5141\AppData\Roaming\MetaQuotes\Terminal\6350F28AFC7E097F9CE8C04C240B4500\MQL4\Files"
+    mt4_dir = os.path.join(MT4_TERMINAL_PATH, MT4_FILES_DIR)
     
     # 输出目录路径
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "MT4data")
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), MT4DATA_DIR)
     
     # 确保输出目录存在
     if not os.path.exists(output_dir):
